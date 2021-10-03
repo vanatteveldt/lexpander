@@ -1,0 +1,169 @@
+---
+title: "README"
+output: github_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=F, message=F)
+```
+
+Lexpander is a set of tools for semi-automatic dictionary expansion (i.e. using embeddings).
+
+# Instalation
+
+```{r, eval=FALSE}
+remotes::install_github("vanatteveldt/lexpander")
+```
+
+```{r}
+library(lexpander)
+```
+
+## Getting a FastText embedding model
+
+The package works with embeddings using the FastText format and the FastTextR package.
+You can substitute a custom or language-specific model here, but for this example
+we will download and use an English model trained on general Internet data. 
+
+You can download the model [here](https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.en.300.bin.gz) and unzip it yourself, or you can use the code below:
+
+```{r}
+if (!file.exists("cc.en.300.bin")) {
+  url = "https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.en.300.bin.gz"
+  options(timeout=4300)  # assuming 1Mb/s
+  download.file(paste0(url), destfile = "cc.en.300.bin.gz")
+  # Note: Install R.utils if needed
+  R.utils::gunzip("cc.en.300.bin.gz")
+}
+```
+
+Finally, load the model using the `fastTextR::ft_load` function:
+
+```{r}
+library(fastTextR)
+ft_model = ft_load("cc.en.300.bin")
+```
+
+# Dictionary expansion
+
+Using similarity between word embeddings and a seed set of words,
+we can automatically expand the dictionary. 
+
+For example, suppose we wish to identify passages in the state of the union speeches that address the economy.
+
+## Wildcard expansion
+
+Let's start with a very naive 'dictionary' for economic news, namely `eco* OR finan*`.
+First, we expand the wildcards to get all words containing these roots:
+
+```{r}
+words = c("eco*", "finan*")
+words = expand_wildcards(ft_model, words)
+```
+
+## Compare with distribution in a corpus
+
+The expanded words contains many things that we would not recognize as a word, 
+e.g. `finances.In`. Since we only care about words that actually occur 
+
+```{r}
+library(quanteda)
+library(tidyverse)
+dfm = dfm(tokens(sotu::sotu_text))
+words = quanteda.textstats::textstat_frequency(dfm) %>%
+  as_tibble() %>% select(word=feature, freq=frequency) %>%
+  filter(word %in% words)
+words
+```
+
+This looks reasonable -- the only word that probably doesn't belong is `ecosystems`.
+Note that this was intentional: hopefully,  we can automatically identify such mistakes.
+
+## Internal cohesion of dictionary
+
+```{r}
+sim = pairwise_similarities(ft_model, words$word)
+sim
+```
+
+We can plot the data:
+
+```{r}
+g = similarity_graph(sim, words, threshold = .5)
+plot(g)
+```
+
+From this graph, you can directly see that `ecosystems` is an outlier,
+and also that `financier*` and `economiz*` form separate components.
+This is useful for deciding as a researcher whether to include these terms or not. 
+
+## Automatic expansion using word embeddings
+
+Starting from this seed set of 22 words, we can find words that are semantically close to the starting words:
+
+```{r}
+set.seed(1)
+results = expand_terms(ft_model, words$word, vocabulary = colnames(dfm))
+results
+```
+
+Which we can plot to find an 'elbow point':
+
+```{r}
+results %>% 
+  select(rank, precision:f4) %>% 
+  pivot_longer(-rank, names_to = "measure") %>% 
+  ggplot(aes(x=rank, y=value, color=measure)) + geom_line() +
+  ggtitle("Query expansion measures", paste0("max(f4)=", round(max(results$f4),2), ", at n=", which.max(results$f4)))+
+  ggthemes::theme_clean()
+```
+
+Which suggests that the 'sweet spot' is somewhere around n=85 extra terms:
+
+```{r}
+head(results$word, n=85)
+```
+
+[*TODO:* Add function for repeating this x times and getting a smoother result]
+
+## Exploring the expanded set
+
+```{r}
+terms = names(nearest_neighbors(ft_model, words$word))
+terms = intersect(terms, colnames(dfm)) |> head(85) |> union(words$word)
+terms
+```
+
+Since we didn't remove the `ecosystem` word, this also includes terms related to that, such as habitat.
+We can check the internal consistency of the expanded dictionary by looking at distance from centroid vector:
+
+```{r}
+d = distance_from_centroid(ft_model, terms) |> 
+  enframe(name = "word", value="similarity") |>
+  arrange(similarity)
+d
+```
+
+```{r}
+hist(d$similarity)
+```
+
+We can also create a graph like before
+
+```{r}
+sim = pairwise_similarities(ft_model, terms)
+freqs = quanteda.textstats::textstat_frequency(dfm) %>%
+  as_tibble() %>% select(word=feature, freq=frequency) %>%
+  filter(word %in% terms)
+g = similarity_graph(sim, freqs)
+plot(g)
+```
+
+Or interactively with the following code:
+
+```{r, eval=F}
+library(networkD3)
+sim %>% filter(similarity>.6) %>% simpleNetwork(zoom = T)
+```

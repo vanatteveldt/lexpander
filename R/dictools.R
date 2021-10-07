@@ -1,15 +1,19 @@
 #' Expand words using wildcard expansion
 #' Default uses 'glob' style wildcards ("finan*"), set type='regex' to use
 #' regular expressions
-#' @param ft_model a fastTextR model
+#' @param model_or_dfm a fastTextR model or quanteda dfm
 #' @param words a character vector of words containing wildcards
 #' @return a character vector containing the expanded terms
 #' @export
-expand_wildcards = function(ft_model, words, type=c("glob","regex")) {
+expand_wildcards = function(model_or_dfm, words, type=c("glob","regex")) {
   type = match.arg(type, c("glob","regex"))
   if (type == "glob") words = glob2rx(words)
   pattern = paste0("(?:", words, ")", collapse="|")
-  vocabulary = fastTextR::ft_words(ft_model)
+  if (class(model_or_dfm) == "dfm") {
+    vocabulary = colnames(model_or_dfm)
+  }  else {
+    vocabulary = fastTextR::ft_words(model_or_dfm)
+  }
   stringr::str_subset(vocabulary, pattern)
 }
 

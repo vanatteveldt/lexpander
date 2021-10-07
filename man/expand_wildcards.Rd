@@ -6,10 +6,10 @@
 Default uses 'glob' style wildcards ("finan*"), set type='regex' to use
 regular expressions}
 \usage{
-expand_wildcards(ft_model, words, type = c("glob", "regex"))
+expand_wildcards(model_or_dfm, words, type = c("glob", "regex"))
 }
 \arguments{
-\item{ft_model}{a fastTextR model}
+\item{model_or_dfm}{a fastTextR model or quanteda dfm}
 
 \item{words}{a character vector of words containing wildcards}
 }

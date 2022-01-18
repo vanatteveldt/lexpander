@@ -95,8 +95,8 @@ distance_from_centroid = function(ft_model, words) {
 #' @export
 similarity_graph = function(similarities, word_metadata=NULL, threshold=.5) {
   g = igraph::graph_from_data_frame(sim, directed=F, vertices=word_metadata)
-  g = igraph::delete_edges(g, igraph::E(g)[igraph::E(g)$similarity<.5])
-  igraph::E(g)$width = igraph::E(g)$similarity^3*10
+  g = igraph::delete_edges(g, igraph::E(g)[igraph::E(g)$similarity<threshold])
+  igraph::E(g)$width = 1 + scales::rescale(igraph::E(g)$similarity)^3*10
   igraph::V(g)$shape = "none"
   if ("freq" %in% names(igraph::vertex.attributes(g))) {
     igraph::V(g)$label.cex = .5 + scales::rescale(log(igraph::V(g)$freq))
